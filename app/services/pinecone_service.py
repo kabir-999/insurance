@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Optional
 import pinecone
 from pinecone import Pinecone, ServerlessSpec
@@ -139,7 +140,13 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
 async def delete_namespace(namespace: str) -> None:
     """Delete all vectors in the specified namespace."""
     try:
-        index = pc.Index(INDEX_NAME)
-        index.delete(delete_all=True, namespace=namespace)
+        loop = asyncio.get_event_loop()
+        index = await loop.run_in_executor(None, lambda: pc.Index(INDEX_NAME))
+        await loop.run_in_executor(
+            None,
+            lambda: index.delete(delete_all=True, namespace=namespace)
+        )
+        print(f"Successfully deleted namespace: {namespace}")
     except Exception as e:
         print(f"Error deleting namespace {namespace}: {e}")
+        raise
