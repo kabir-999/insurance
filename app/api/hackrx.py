@@ -3,7 +3,9 @@ import time
 from fastapi import APIRouter, HTTPException
 from app.api.schemas import HackRxRequest, HackRxResponse, Answer
 from app.services.document_service import process_document
-from app.services.pinecone_service import create_pinecone_index, upsert_to_pinecone, query_pinecone, delete_namespace
+from app.services.pinecone_service import (
+    create_pinecone_index, upsert_to_pinecone, query_pinecone, delete_namespace, get_namespace_vector_count
+)
 from app.services.llm_service import get_answer_from_llm
 
 router = APIRouter()
@@ -24,11 +26,20 @@ def run_submission(request: HackRxRequest):
         # A simple chunking strategy
         text_chunks = [text[i:i + 2000] for i in range(0, len(text), 2000)]
 
-        # 3. Upsert data into the new namespace
-        upsert_to_pinecone(namespace, text_chunks)
+        # 3. Upsert data into the new namespace and get the count of vectors
+        upserted_count = upsert_to_pinecone(namespace, text_chunks)
 
-        # Add a 10-second delay to allow for Pinecone indexing latency
-        time.sleep(10)
+        # 4. Poll Pinecone until all vectors are indexed (with a timeout)
+        if upserted_count > 0:
+            max_wait_seconds = 20  # Max time to wait for indexing
+            for _ in range(max_wait_seconds):
+                indexed_count = get_namespace_vector_count(namespace)
+                if indexed_count >= upserted_count:
+                    break  # Exit loop once all vectors are indexed
+                time.sleep(1) # Wait 1 second before checking again
+            else:
+                # This runs if the loop completes without a break
+                print(f"Warning: Pinecone indexing timed out after {max_wait_seconds} seconds.")
 
         # 4. For each question, query Pinecone and get answer from LLM
         answers = []
