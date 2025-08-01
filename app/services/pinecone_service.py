@@ -19,28 +19,39 @@ AWS_REGION = "us-east-1"  # us-east-1 supports free tier
 BATCH_SIZE = 50  # Number of chunks to process in parallel
 MAX_WORKERS = 4  # Number of worker threads
 
-def create_pinecone_index():
+async def create_pinecone_index():
     """Creates an optimized Pinecone index if it doesn't exist.
     
     Using AWS us-east-1 which supports the free tier.
     """
-    if INDEX_NAME not in pc.list_indexes().names():
-        try:
-            pc.create_index(
-                name=INDEX_NAME,
-                dimension=768,  # Dimension for text-embedding-004 model
-                metric="cosine",
-                spec=ServerlessSpec(
-                    cloud="aws",
-                    region=AWS_REGION
-                ),
-                timeout=30
+    try:
+        # List indexes is a synchronous operation, so we run it in a thread
+        indexes = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: pc.list_indexes().names()
+        )
+        
+        if INDEX_NAME not in indexes:
+            print(f"Creating new index: {INDEX_NAME} in {AWS_REGION}")
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: pc.create_index(
+                    name=INDEX_NAME,
+                    dimension=768,  # Dimension for text-embedding-004 model
+                    metric="cosine",
+                    spec=ServerlessSpec(
+                        cloud="aws",
+                        region=AWS_REGION
+                    ),
+                    timeout=30
+                )
             )
-            print(f"Created new index: {INDEX_NAME} in {AWS_REGION}")
-        except Exception as e:
-            print(f"Error creating index: {e}")
-            print("Make sure your account has access to create indexes in the free tier.")
-            raise
+            print(f"Successfully created index: {INDEX_NAME}")
+        return True
+    except Exception as e:
+        print(f"Error in create_pinecone_index: {e}")
+        print("Make sure your account has access to create indexes in the free tier.")
+        raise
 
 async def process_batch(batch: List[tuple[int, str]]) -> List[dict]:
     """Process a batch of chunks into vectors."""
