@@ -28,7 +28,7 @@ async def get_embeddings_batch(texts: List[str], task_type: str = "RETRIEVAL_DOC
             result = await asyncio.get_event_loop().run_in_executor(
                 _executor,
                 lambda c=chunk: genai.embed_content(
-                    model="models/text-embedding-004",
+                    model="models/embedding-001",
                     content=c,
                     task_type=task_type
                 )

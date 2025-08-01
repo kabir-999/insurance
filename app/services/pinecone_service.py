@@ -38,7 +38,7 @@ async def create_pinecone_index():
                 None,
                 lambda: pc.create_index(
                     name=INDEX_NAME,
-                    dimension=768,  # Dimension for text-embedding-004 model
+                    dimension=384,  # Dimension for embedding-001 model
                     metric="cosine",
                     spec=ServerlessSpec(
                         cloud="aws",
