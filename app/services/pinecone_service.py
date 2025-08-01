@@ -2,7 +2,7 @@ import asyncio
 from typing import List, Optional
 import pinecone
 from pinecone import Pinecone, ServerlessSpec
-from app.core.config import PINECONE_API_KEY
+from app.core.config import PINECONE_API_KEY, PINECONE_ENVIRONMENT, PINECONE_INDEX_NAME
 from app.services.embedding_service import get_embeddings_batch
 import asyncio
 from typing import List, Optional
@@ -10,8 +10,8 @@ import concurrent.futures
 
 # Initialize Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
-# Using a new index name to avoid conflicts and ensure fresh start
-INDEX_NAME = "hackrx-aws-free"
+# Use index name from environment variables
+INDEX_NAME = PINECONE_INDEX_NAME
 
 # AWS region that supports free tier
 AWS_REGION = "us-east-1"  # us-east-1 supports free tier
