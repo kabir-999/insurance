@@ -8,6 +8,7 @@ class HackRxRequest(BaseModel):
 class Answer(BaseModel):
     question: str
     answer: str
+    context: str | None = None
 
 class HackRxResponse(BaseModel):
     answers: List[Answer]

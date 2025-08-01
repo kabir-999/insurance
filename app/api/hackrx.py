@@ -47,4 +47,8 @@ async def process_question(question: str, namespace: str) -> Answer:
     relevant_chunks = await query_pinecone(namespace, question, top_k=3)
     context = "\n\n".join(relevant_chunks)
     answer = await get_answer_from_llm(question, context)
-    return Answer(question=question, answer=answer)
+    return Answer(
+        question=question,
+        answer=answer,
+        context=context if context else None
+    )
