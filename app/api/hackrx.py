@@ -17,8 +17,9 @@ async def run_submission(request: HackRxRequest):
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=500, detail="Google API key not configured")
     
-    namespace = f"hackrx-namespace-{uuid.uuid4().hex}"
-    print(f"DEBUG: Starting request with namespace: {namespace}")
+    # Use a single persistent namespace for all insurance documents
+    namespace = "insurance-documents"
+    print(f"DEBUG: Using persistent namespace: {namespace}")
     try:
         # Process the document synchronously for faster response
         text = process_document(request.documents)
@@ -65,8 +66,8 @@ async def run_submission(request: HackRxRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Clean up namespace in the background
-        asyncio.create_task(cleanup_namespace(namespace))
+        # Keep the persistent namespace - no cleanup needed
+        print(f"DEBUG: Request completed, keeping persistent namespace: {namespace}")
 
 async def process_question(question: str, namespace: str) -> Answer:
     """Process a single question and return an Answer."""
@@ -86,7 +87,8 @@ async def process_question(question: str, namespace: str) -> Answer:
 async def cleanup_namespace(namespace: str) -> None:
     """Clean up the Pinecone namespace after processing is complete."""
     try:
-        if namespace:
-            await delete_namespace(namespace)
+        # Use a single persistent namespace for all insurance documents
+        namespace = "insurance-documents"
+        print(f"DEBUG: Using persistent namespace: {namespace}")
     except Exception as e:
         print(f"Error cleaning up namespace {namespace}: {e}")
