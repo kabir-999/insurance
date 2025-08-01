@@ -32,13 +32,36 @@ async def create_pinecone_index():
             lambda: pc.list_indexes().names()
         )
         
+        if INDEX_NAME in indexes:
+            # Check if existing index has correct dimensions
+            try:
+                index_info = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: pc.describe_index(INDEX_NAME)
+                )
+                if index_info.dimension != 768:
+                    print(f"Index {INDEX_NAME} has wrong dimensions ({index_info.dimension}), deleting and recreating...")
+                    await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: pc.delete_index(INDEX_NAME)
+                    )
+                    # Wait a bit for deletion to complete
+                    await asyncio.sleep(10)
+                    indexes = []  # Force recreation
+                else:
+                    print(f"Index {INDEX_NAME} already exists with correct dimensions")
+                    return True
+            except Exception as e:
+                print(f"Error checking index dimensions: {e}")
+                # Continue to recreation if there's an issue
+        
         if INDEX_NAME not in indexes:
             print(f"Creating new index: {INDEX_NAME} in {AWS_REGION}")
             await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: pc.create_index(
                     name=INDEX_NAME,
-                    dimension=384,  # Dimension for embedding-001 model
+                    dimension=768,  # Dimension for text-embedding-004 model
                     metric="cosine",
                     spec=ServerlessSpec(
                         cloud="aws",
