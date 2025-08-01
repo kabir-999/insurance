@@ -1,60 +1,50 @@
 import uuid
-import time
 from fastapi import APIRouter, HTTPException
 from app.api.schemas import HackRxRequest, HackRxResponse, Answer
 from app.services.document_service import process_document
-from app.services.pinecone_service import (
-    create_pinecone_index, upsert_to_pinecone, query_pinecone, delete_namespace, get_namespace_vector_count
-)
+from app.services.pinecone_service import upsert_to_pinecone, query_pinecone
 from app.services.llm_service import get_answer_from_llm
+import asyncio
 
 router = APIRouter()
 
 @router.post("/api/v1/hackrx/run", response_model=HackRxResponse)
-def run_submission(request: HackRxRequest):
+async def run_submission(request: HackRxRequest):
     namespace = f"hackrx-namespace-{uuid.uuid4().hex}"
     try:
-        # 1. Create the single persistent index if it doesn't exist.
-        # This is idempotent and safe to call on every request.
-        create_pinecone_index()
-
-        # 2. Process the document
+        # Process the document
         text = process_document(request.documents)
         if not text or not text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from the document.")
         
-        # A simple chunking strategy
-        text_chunks = [text[i:i + 2000] for i in range(0, len(text), 2000)]
-
-        # 3. Upsert data into the new namespace and get the count of vectors
-        upserted_count = upsert_to_pinecone(namespace, text_chunks)
-
-        # 4. Poll Pinecone until all vectors are indexed (with a timeout)
-        if upserted_count > 0:
-            max_wait_seconds = 20  # Max time to wait for indexing
-            for _ in range(max_wait_seconds):
-                indexed_count = get_namespace_vector_count(namespace)
-                if indexed_count >= upserted_count:
-                    break  # Exit loop once all vectors are indexed
-                time.sleep(1) # Wait 1 second before checking again
-            else:
-                # This runs if the loop completes without a break
-                print(f"Warning: Pinecone indexing timed out after {max_wait_seconds} seconds.")
-
-        # 4. For each question, query Pinecone and get answer from LLM
-        answers = []
-        for q in request.questions:
-            context = query_pinecone(namespace, q, top_k=7)
-            answer_text = get_answer_from_llm(q, context)
-            answers.append(Answer(question=q, answer=answer_text))
+        # Chunk the text
+        chunk_size = 1000  # Optimized chunking strategy with smaller chunks for better parallel processing
+        text_chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+        
+        # Process chunks in parallel for faster embedding and upsert
+        upserted_count = await upsert_to_pinecone(namespace, text_chunks)
+        
+        if upserted_count == 0:
+            raise HTTPException(status_code=500, detail="Failed to process document chunks.")
+        
+        # Process questions in parallel
+        tasks = [
+            process_question(q, namespace)
+            for q in request.questions
+        ]
+        answers = await asyncio.gather(*tasks)
         
         return HackRxResponse(answers=answers)
-
+        
     except Exception as e:
-        # Log the exception for debugging
-        print(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # 5. Clean up the namespace from the Pinecone index to keep it clean
-        if 'namespace' in locals():
-            delete_namespace(namespace)
+        # Clean up namespace in the background
+        asyncio.create_task(cleanup_namespace(namespace))
+
+async def process_question(question: str, namespace: str) -> Answer:
+    """Process a single question and return an Answer."""
+    relevant_chunks = await query_pinecone(namespace, question, top_k=3)
+    context = "\n\n".join(relevant_chunks)
+    answer = await get_answer_from_llm(question, context)
+    return Answer(question=question, answer
