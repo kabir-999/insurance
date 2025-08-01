@@ -2,7 +2,7 @@ import uuid
 from fastapi import APIRouter, HTTPException
 from app.api.schemas import HackRxRequest, HackRxResponse, Answer
 from app.services.document_service import process_document
-from app.services.pinecone_service import upsert_to_pinecone, query_pinecone
+from app.services.pinecone_service import upsert_to_pinecone, query_pinecone, delete_namespace
 from app.services.llm_service import get_answer_from_llm
 import asyncio
 
@@ -52,3 +52,11 @@ async def process_question(question: str, namespace: str) -> Answer:
         answer=answer,
         context=context if context else None
     )
+
+async def cleanup_namespace(namespace: str) -> None:
+    """Clean up the Pinecone namespace after processing is complete."""
+    try:
+        if namespace:
+            await delete_namespace(namespace)
+    except Exception as e:
+        print(f"Error cleaning up namespace {namespace}: {e}")

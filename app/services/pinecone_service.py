@@ -96,3 +96,11 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
     except Exception as e:
         print(f"Query error: {e}")
         return []
+
+async def delete_namespace(namespace: str) -> None:
+    """Delete all vectors in the specified namespace."""
+    try:
+        index = pc.Index(INDEX_NAME)
+        index.delete(delete_all=True, namespace=namespace)
+    except Exception as e:
+        print(f"Error deleting namespace {namespace}: {e}")
