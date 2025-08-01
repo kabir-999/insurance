@@ -72,7 +72,10 @@ async def process_batch(batch: List[tuple[int, str]]) -> List[dict]:
 async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
     """Upserts text chunks in parallel for better performance."""
     await create_pinecone_index()
-    index = pc.Index(INDEX_NAME)
+    loop = asyncio.get_event_loop()
+    
+    # Create index instance in the event loop
+    index = await loop.run_in_executor(None, lambda: pc.Index(INDEX_NAME))
     
     # Filter and prepare chunks with indices
     valid_chunks = [(i, chunk) for i, chunk in enumerate(text_chunks) if chunk and chunk.strip()]
@@ -88,10 +91,15 @@ async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
         if vectors:
             # Upsert in smaller batches to avoid timeouts
             for j in range(0, len(vectors), 50):
-                index.upsert(
-                    vectors=vectors[j:j+50],
-                    namespace=namespace,
-                    timeout=10  # Shorter timeout for faster retries
+                batch_vectors = vectors[j:j+50]
+                # Run upsert in thread pool
+                await loop.run_in_executor(
+                    None,
+                    lambda v=batch_vectors: index.upsert(
+                        vectors=v,
+                        namespace=namespace,
+                        timeout=10  # Shorter timeout for faster retries
+                    )
                 )
             total_vectors += len(vectors)
     
@@ -100,20 +108,27 @@ async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
 async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str]:
     """Optimized query with faster response time."""
     await create_pinecone_index()
-    index = pc.Index(INDEX_NAME)
+    loop = asyncio.get_event_loop()
     
-    # Get embedding with timeout
+    # Create index instance in the event loop
+    index = await loop.run_in_executor(None, lambda: pc.Index(INDEX_NAME))
+    
     try:
+        # Get embedding with timeout
         query_embedding = await get_embeddings_batch([query], task_type="RETRIEVAL_QUERY")
         if not query_embedding:
             return []
             
-        results = index.query(
-            vector=query_embedding[0],
-            top_k=min(top_k, 5),  # Limit to 5 for faster response
-            include_metadata=True,
-            namespace=namespace,
-            timeout=5  # Faster timeout for queries
+        # Run query in thread pool
+        results = await loop.run_in_executor(
+            None,
+            lambda: index.query(
+                vector=query_embedding[0],
+                top_k=min(top_k, 5),  # Limit to 5 for faster response
+                include_metadata=True,
+                namespace=namespace,
+                timeout=5  # Faster timeout for queries
+            )
         )
         
         return [match.metadata.get("text", "") for match in results.matches]
