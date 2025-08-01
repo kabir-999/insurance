@@ -1,4 +1,5 @@
 import uuid
+import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.api.schemas import HackRxRequest, HackRxResponse, Answer
 from app.services.document_service import process_document
@@ -30,6 +31,9 @@ def run_submission(request: HackRxRequest):
 
         # 3. Upsert data into the new namespace
         upsert_to_pinecone(namespace, text_chunks)
+
+        # Add a 10-second delay to allow for Pinecone indexing latency
+        time.sleep(10)
 
         # 4. For each question, query Pinecone and get answer from LLM
         answers = []
