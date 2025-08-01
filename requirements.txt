@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+gunicorn
 pinecone
 google-generativeai
 python-dotenv
