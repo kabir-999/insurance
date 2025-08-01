@@ -10,10 +10,21 @@ router = APIRouter()
 
 @router.post("/api/v1/hackrx/run", response_model=HackRxResponse)
 async def run_submission(request: HackRxRequest):
+    # Check API keys
+    from app.core.config import PINECONE_API_KEY, GOOGLE_API_KEY
+    if not PINECONE_API_KEY:
+        raise HTTPException(status_code=500, detail="Pinecone API key not configured")
+    if not GOOGLE_API_KEY:
+        raise HTTPException(status_code=500, detail="Google API key not configured")
+    
     namespace = f"hackrx-namespace-{uuid.uuid4().hex}"
+    print(f"DEBUG: Starting request with namespace: {namespace}")
     try:
         # Process the document synchronously for faster response
         text = process_document(request.documents)
+        print(f"DEBUG: Extracted text length: {len(text) if text else 0}")
+        print(f"DEBUG: First 200 chars: {text[:200] if text else 'None'}")
+        
         if not text or not text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from the document.")
         
@@ -31,8 +42,13 @@ async def run_submission(request: HackRxRequest):
             if len(text_chunks) >= max_chunks:
                 break
         
+        print(f"DEBUG: Created {len(text_chunks)} chunks")
+        print(f"DEBUG: First chunk preview: {text_chunks[0][:100] if text_chunks else 'None'}...")
+        print(f"DEBUG: Using namespace: {namespace}")
+        
         # Process chunks in parallel for faster embedding and upsert
         upserted_count = await upsert_to_pinecone(namespace, text_chunks)
+        print(f"DEBUG: Upserted {upserted_count} vectors to Pinecone")
         
         if upserted_count == 0:
             raise HTTPException(status_code=500, detail="Failed to process document chunks.")

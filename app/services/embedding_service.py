@@ -12,7 +12,9 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 async def get_embeddings_batch(texts: List[str], task_type: str = "RETRIEVAL_DOCUMENT") -> List[List[float]]:
     """Generates embeddings for a batch of texts using Google's model with parallel processing."""
+    print(f"DEBUG: Generating embeddings for {len(texts)} texts (task_type: {task_type})")
     if not texts:
+        print("DEBUG: No texts provided for embedding")
         return []
 
     # Process in chunks to avoid rate limits
@@ -32,14 +34,20 @@ async def get_embeddings_batch(texts: List[str], task_type: str = "RETRIEVAL_DOC
                 )
             )
             if result and 'embedding' in result:
-                all_embeddings.extend(result['embedding'])
+                batch_embeddings = result['embedding']
+                print(f"DEBUG: Got {len(batch_embeddings)} embeddings for batch {i//chunk_size}")
+                all_embeddings.extend(batch_embeddings)
+            else:
+                print(f"DEBUG: No embeddings in result for batch {i//chunk_size}: {result}")
         except Exception as e:
             print(f"Error in embedding batch {i//chunk_size}: {e}")
+            print(f"DEBUG: This might be an API key issue or rate limit")
             # Return partial results if some embeddings succeeded
             if all_embeddings:
                 return all_embeddings
             return []
     
+    print(f"DEBUG: Returning {len(all_embeddings)} total embeddings")
     return all_embeddings
 
 def get_embedding(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> List[float]:

@@ -108,6 +108,7 @@ async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
 
 async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str]:
     """Optimized query with faster response time."""
+    print(f"DEBUG: Querying namespace '{namespace}' with query: '{query}' (top_k={top_k})")
     await create_pinecone_index()
     loop = asyncio.get_event_loop()
     
@@ -132,7 +133,13 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
             )
         )
         
-        return [match.metadata.get("text", "") for match in results.matches]
+        print(f"DEBUG: Query returned {len(results.matches)} matches")
+        for i, match in enumerate(results.matches[:2]):
+            print(f"DEBUG: Match {i+1} score: {match.score}, text preview: {match.metadata.get('text', '')[:100]}...")
+        
+        texts = [match.metadata.get("text", "") for match in results.matches]
+        print(f"DEBUG: Returning {len(texts)} text chunks")
+        return texts
     except Exception as e:
         print(f"Query error: {e}")
         return []
