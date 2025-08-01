@@ -16,9 +16,9 @@ INDEX_NAME = "hackrx-aws-free"
 # AWS region that supports free tier
 AWS_REGION = "us-east-1"  # us-east-1 supports free tier
 
-# Configure for better performance
-BATCH_SIZE = 50  # Number of chunks to process in parallel
-MAX_WORKERS = 4  # Number of worker threads
+# Configure for speed optimization
+BATCH_SIZE = 10  # Smaller batches for faster processing
+MAX_WORKERS = 2  # Fewer workers to reduce overhead
 
 async def create_pinecone_index():
     """Creates an optimized Pinecone index if it doesn't exist.
@@ -90,16 +90,16 @@ async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
         vectors = await process_batch(batch)
         
         if vectors:
-            # Upsert in smaller batches to avoid timeouts
-            for j in range(0, len(vectors), 50):
-                batch_vectors = vectors[j:j+50]
-                # Run upsert in thread pool
+            # Upsert in very small batches for speed
+            for j in range(0, len(vectors), 20):
+                batch_vectors = vectors[j:j+20]
+                # Run upsert in thread pool with shorter timeout
                 await loop.run_in_executor(
                     None,
                     lambda v=batch_vectors: index.upsert(
                         vectors=v,
                         namespace=namespace,
-                        timeout=10  # Shorter timeout for faster retries
+                        timeout=5  # Very short timeout for speed
                     )
                 )
             total_vectors += len(vectors)
@@ -120,15 +120,15 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
         if not query_embedding:
             return []
             
-        # Run query in thread pool
+        # Run query in thread pool with minimal results
         results = await loop.run_in_executor(
             None,
             lambda: index.query(
                 vector=query_embedding[0],
-                top_k=min(top_k, 5),  # Limit to 5 for faster response
+                top_k=min(top_k, 3),  # Limit to 3 for fastest response
                 include_metadata=True,
                 namespace=namespace,
-                timeout=5  # Faster timeout for queries
+                timeout=3  # Very fast timeout for queries
             )
         )
         

@@ -12,15 +12,15 @@ router = APIRouter()
 async def run_submission(request: HackRxRequest):
     namespace = f"hackrx-namespace-{uuid.uuid4().hex}"
     try:
-        # Process the document
-        loop = asyncio.get_event_loop()
-        text = await loop.run_in_executor(None, process_document, request.documents)
+        # Process the document synchronously for faster response
+        text = process_document(request.documents)
         if not text or not text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from the document.")
         
-        # Chunk the text
-        chunk_size = 1000  # Optimized chunking strategy with smaller chunks for better parallel processing
-        text_chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+        # Optimized chunking for speed - smaller chunks, fewer total chunks
+        chunk_size = 800  # Smaller chunks for faster embedding
+        max_chunks = 20   # Limit total chunks for faster processing
+        text_chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)][:max_chunks]
         
         # Process chunks in parallel for faster embedding and upsert
         upserted_count = await upsert_to_pinecone(namespace, text_chunks)
@@ -45,7 +45,7 @@ async def run_submission(request: HackRxRequest):
 
 async def process_question(question: str, namespace: str) -> Answer:
     """Process a single question and return an Answer."""
-    relevant_chunks = await query_pinecone(namespace, question, top_k=3)
+    relevant_chunks = await query_pinecone(namespace, question, top_k=2)
     context = "\n\n".join(relevant_chunks)
     answer = await get_answer_from_llm(question, context)
     return Answer(
