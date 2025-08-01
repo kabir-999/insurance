@@ -39,7 +39,7 @@ async def create_pinecone_index():
                     None,
                     lambda: pc.describe_index(INDEX_NAME)
                 )
-                if index_info.dimension != 384:
+                if index_info.dimension != 768:
                     print(f"Index {INDEX_NAME} has wrong dimensions ({index_info.dimension}), deleting and recreating...")
                     await asyncio.get_event_loop().run_in_executor(
                         None,
@@ -61,7 +61,7 @@ async def create_pinecone_index():
                 None,
                 lambda: pc.create_index(
                     name=INDEX_NAME,
-                    dimension=384,  # Dimension for embedding-001 model
+                    dimension=768,  # Dimension for text-embedding-004 model
                     metric="cosine",
                     spec=ServerlessSpec(
                         cloud="aws",

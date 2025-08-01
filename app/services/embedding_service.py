@@ -36,10 +36,8 @@ async def get_embeddings_batch(texts: List[str], task_type: str = "RETRIEVAL_DOC
             if result and 'embedding' in result:
                 batch_embeddings = result['embedding']
                 print(f"DEBUG: Got {len(batch_embeddings)} embeddings for batch {i//chunk_size}")
-                # Truncate embeddings to 384 dimensions to match existing Pinecone index
-                truncated_embeddings = [emb[:384] for emb in batch_embeddings]
-                print(f"DEBUG: Truncated embeddings from {len(batch_embeddings[0]) if batch_embeddings else 0} to 384 dimensions")
-                all_embeddings.extend(truncated_embeddings)
+                print(f"DEBUG: Embedding dimensions: {len(batch_embeddings[0]) if batch_embeddings else 0}")
+                all_embeddings.extend(batch_embeddings)
             else:
                 print(f"DEBUG: No embeddings in result for batch {i//chunk_size}: {result}")
         except Exception as e:
