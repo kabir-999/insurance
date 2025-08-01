@@ -13,7 +13,8 @@ async def run_submission(request: HackRxRequest):
     namespace = f"hackrx-namespace-{uuid.uuid4().hex}"
     try:
         # Process the document
-        text = process_document(request.documents)
+        loop = asyncio.get_event_loop()
+        text = await loop.run_in_executor(None, process_document, request.documents)
         if not text or not text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from the document.")
         
