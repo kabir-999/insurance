@@ -13,15 +13,21 @@ async def get_answer_from_llm(question: str, context: str) -> str:
 
     # Construct a prompt that instructs the model to use only the provided context
     prompt = f"""
-    Based exclusively on the following context, please provide a clear and concise answer to the question.
-    Do not use any information outside of the provided text.
+    You are analyzing an insurance policy document. Based exclusively on the following context from the insurance document, please provide a clear, detailed, and specific answer to the question.
+    
+    Important instructions:
+    - Use ONLY the information provided in the context below
+    - Be specific with amounts, percentages, and conditions mentioned
+    - If the context contains relevant information, provide a comprehensive answer
+    - Include specific details like coverage amounts, waiting periods, exclusions, etc.
+    - Do not make assumptions or add information not in the context
 
-    Context:
+    Context from Insurance Document:
     {context}
 
     Question: {question}
 
-    Answer:
+    Detailed Answer:
     """
 
     try:

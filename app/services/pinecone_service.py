@@ -16,9 +16,9 @@ INDEX_NAME = "hackrx-aws-free"
 # AWS region that supports free tier
 AWS_REGION = "us-east-1"  # us-east-1 supports free tier
 
-# Configure for speed optimization
-BATCH_SIZE = 10  # Smaller batches for faster processing
-MAX_WORKERS = 2  # Fewer workers to reduce overhead
+# Configure for better context processing
+BATCH_SIZE = 15  # Balanced batch size for good processing
+MAX_WORKERS = 3  # Moderate workers for efficiency
 
 async def create_pinecone_index():
     """Creates an optimized Pinecone index if it doesn't exist.
@@ -120,15 +120,15 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
         if not query_embedding:
             return []
             
-        # Run query in thread pool with minimal results
+        # Run query in thread pool for better context
         results = await loop.run_in_executor(
             None,
             lambda: index.query(
                 vector=query_embedding[0],
-                top_k=min(top_k, 3),  # Limit to 3 for fastest response
+                top_k=min(top_k, 8),  # More results for better context
                 include_metadata=True,
                 namespace=namespace,
-                timeout=3  # Very fast timeout for queries
+                timeout=10  # Longer timeout for better results
             )
         )
         

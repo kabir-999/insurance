@@ -17,10 +17,19 @@ async def run_submission(request: HackRxRequest):
         if not text or not text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from the document.")
         
-        # Optimized chunking for speed - smaller chunks, fewer total chunks
-        chunk_size = 800  # Smaller chunks for faster embedding
-        max_chunks = 20   # Limit total chunks for faster processing
-        text_chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)][:max_chunks]
+        # Improved chunking strategy for better context retrieval
+        chunk_size = 1200  # Larger chunks for better context
+        overlap = 200      # Overlap between chunks for continuity
+        max_chunks = 30    # More chunks for better coverage
+        
+        # Create overlapping chunks
+        text_chunks = []
+        for i in range(0, len(text), chunk_size - overlap):
+            chunk = text[i:i + chunk_size]
+            if chunk.strip():  # Only add non-empty chunks
+                text_chunks.append(chunk)
+            if len(text_chunks) >= max_chunks:
+                break
         
         # Process chunks in parallel for faster embedding and upsert
         upserted_count = await upsert_to_pinecone(namespace, text_chunks)
@@ -45,13 +54,17 @@ async def run_submission(request: HackRxRequest):
 
 async def process_question(question: str, namespace: str) -> Answer:
     """Process a single question and return an Answer."""
-    relevant_chunks = await query_pinecone(namespace, question, top_k=2)
-    context = "\n\n".join(relevant_chunks)
+    relevant_chunks = await query_pinecone(namespace, question, top_k=5)
+    print(f"DEBUG: Found {len(relevant_chunks)} chunks for question: {question}")
+    print(f"DEBUG: Chunks: {relevant_chunks[:2] if relevant_chunks else 'None'}")
+    
+    context = "\n\n".join(relevant_chunks) if relevant_chunks else ""
     answer = await get_answer_from_llm(question, context)
+    
     return Answer(
         question=question,
         answer=answer,
-        context=context if context else None
+        context=context if context.strip() else None
     )
 
 async def cleanup_namespace(namespace: str) -> None:
