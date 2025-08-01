@@ -139,6 +139,20 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
     index = await loop.run_in_executor(None, lambda: pc.Index(INDEX_NAME))
     
     try:
+        # Check if namespace has any vectors
+        try:
+            stats = await loop.run_in_executor(
+                None,
+                lambda: index.describe_index_stats()
+            )
+            namespace_stats = stats.namespaces.get(namespace, None)
+            if namespace_stats:
+                print(f"DEBUG: Namespace '{namespace}' has {namespace_stats.vector_count} vectors")
+            else:
+                print(f"DEBUG: Namespace '{namespace}' not found in index stats")
+        except Exception as e:
+            print(f"DEBUG: Could not get namespace stats: {e}")
+        
         # Get embedding with timeout
         query_embedding = await get_embeddings_batch([query], task_type="RETRIEVAL_QUERY")
         if not query_embedding:
@@ -157,9 +171,16 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
         )
         
         print(f"DEBUG: Query returned {len(results.matches)} matches")
-        for i, match in enumerate(results.matches[:2]):
-            print(f"DEBUG: Match {i+1} score: {match.score}, text preview: {match.metadata.get('text', '')[:100]}...")
+        if len(results.matches) == 0:
+            print(f"DEBUG: No matches found. This could be due to:")
+            print(f"DEBUG: 1. Namespace mismatch")
+            print(f"DEBUG: 2. Embedding similarity too low")
+            print(f"DEBUG: 3. Index not properly populated")
         
+        for i, match in enumerate(results.matches[:3]):
+            print(f"DEBUG: Match {i+1} score: {match.score:.4f}, text preview: {match.metadata.get('text', '')[:150]}...")
+        
+        # Return all matches regardless of score for debugging
         texts = [match.metadata.get("text", "") for match in results.matches]
         print(f"DEBUG: Returning {len(texts)} text chunks")
         return texts
