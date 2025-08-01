@@ -10,7 +10,10 @@ import concurrent.futures
 # Initialize Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
 # Using a new index name to avoid conflicts and ensure fresh start
-INDEX_NAME = "hackrx-gcp-index"
+INDEX_NAME = "hackrx-aws-free"
+
+# AWS region that supports free tier
+AWS_REGION = "us-east-1"  # us-east-1 supports free tier
 
 # Configure for better performance
 BATCH_SIZE = 50  # Number of chunks to process in parallel
@@ -19,7 +22,7 @@ MAX_WORKERS = 4  # Number of worker threads
 def create_pinecone_index():
     """Creates an optimized Pinecone index if it doesn't exist.
     
-    Note: Using gcp-starter as it's available in the free tier.
+    Using AWS us-east-1 which supports the free tier.
     """
     if INDEX_NAME not in pc.list_indexes().names():
         try:
@@ -28,14 +31,15 @@ def create_pinecone_index():
                 dimension=768,  # Dimension for text-embedding-004 model
                 metric="cosine",
                 spec=ServerlessSpec(
-                    cloud="gcp-starter",  # Using gcp-starter for free tier
-                    region="us-central1"  # Default region for gcp-starter
+                    cloud="aws",
+                    region=AWS_REGION
                 ),
                 timeout=30
             )
-            print(f"Created new index: {INDEX_NAME}")
+            print(f"Created new index: {INDEX_NAME} in {AWS_REGION}")
         except Exception as e:
             print(f"Error creating index: {e}")
+            print("Make sure your account has access to create indexes in the free tier.")
             raise
 
 async def process_batch(batch: List[tuple[int, str]]) -> List[dict]:
