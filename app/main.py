@@ -5,7 +5,7 @@ load_dotenv()
 app = FastAPI(title="Intelligent Query-Retrieval System")
 
 # Include the API router
-app.include_router(hackrx.router, prefix="/api/v1/hackrx")
+app.include_router(hackrx.router)
 
 @app.get("/")
 def read_root():

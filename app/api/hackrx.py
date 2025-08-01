@@ -12,7 +12,7 @@ async def verify_token(request: Request):
     if not authorization or authorization != "Bearer 1d1090f9f6e5c68e19c277483330d79b5a157aaafd8fc73f58a1b333c5513fd4":
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-@router.post("/run", response_model=HackRxResponse, dependencies=[Depends(verify_token)])
+@router.post("/api/v1/hackrx/run", response_model=HackRxResponse, dependencies=[Depends(verify_token)])
 def run_submission(request: HackRxRequest):
     namespace = f"hackrx-namespace-{uuid.uuid4().hex}"
     try:
