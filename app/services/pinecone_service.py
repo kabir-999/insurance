@@ -9,25 +9,34 @@ import concurrent.futures
 
 # Initialize Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
-INDEX_NAME = "hackrx-index-optimized"  # New index name to avoid conflicts
+# Using a new index name to avoid conflicts and ensure fresh start
+INDEX_NAME = "hackrx-gcp-index"
 
 # Configure for better performance
 BATCH_SIZE = 50  # Number of chunks to process in parallel
 MAX_WORKERS = 4  # Number of worker threads
 
 def create_pinecone_index():
-    """Creates an optimized Pinecone index if it doesn't exist."""
+    """Creates an optimized Pinecone index if it doesn't exist.
+    
+    Note: Using gcp-starter as it's available in the free tier.
+    """
     if INDEX_NAME not in pc.list_indexes().names():
-        pc.create_index(
-            name=INDEX_NAME,
-            dimension=768,  # Adjust based on your embedding model
-            metric="cosine",
-            spec=ServerlessSpec(
-                cloud="aws",
-                region="us-west-2"
-            ),
-            timeout=30  # Shorter timeout for faster failure
-        )
+        try:
+            pc.create_index(
+                name=INDEX_NAME,
+                dimension=768,  # Dimension for text-embedding-004 model
+                metric="cosine",
+                spec=ServerlessSpec(
+                    cloud="gcp-starter",  # Using gcp-starter for free tier
+                    region="us-central1"  # Default region for gcp-starter
+                ),
+                timeout=30
+            )
+            print(f"Created new index: {INDEX_NAME}")
+        except Exception as e:
+            print(f"Error creating index: {e}")
+            raise
 
 async def process_batch(batch: List[tuple[int, str]]) -> List[dict]:
     """Process a batch of chunks into vectors."""
