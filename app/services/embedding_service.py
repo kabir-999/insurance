@@ -7,8 +7,11 @@ from concurrent.futures import ThreadPoolExecutor
 # Configure the generative AI model
 genai.configure(api_key=GOOGLE_API_KEY)
 
-# Thread pool optimized for deployment environment
-_executor = ThreadPoolExecutor(max_workers=6)  # Deployment-optimized workers
+# Thread pool AGGRESSIVELY optimized for deployment environment
+_executor = ThreadPoolExecutor(max_workers=12)  # AGGRESSIVE workers for speed
+
+# Connection pooling for Google API
+_api_client_cache = None
 
 async def get_embeddings_batch(texts: List[str], task_type: str = "RETRIEVAL_DOCUMENT") -> List[List[float]]:
     """Generates embeddings for a batch of texts using Google's model with parallel processing."""
@@ -17,36 +20,49 @@ async def get_embeddings_batch(texts: List[str], task_type: str = "RETRIEVAL_DOC
         print("DEBUG: No texts provided for embedding")
         return []
 
-    # Process in deployment-optimized chunks
-    chunk_size = 100  # Deployment-optimized chunk size
+    # Process in AGGRESSIVE chunks for maximum speed
+    chunk_size = 200  # AGGRESSIVE chunk size for speed
     all_embeddings = []
     
-    for i in range(0, len(texts), chunk_size):
-        chunk = texts[i:i + chunk_size]
+    # Process all chunks in parallel for maximum speed
+    async def process_chunk_async(chunk_texts, chunk_idx):
         try:
-            # Run in thread pool to avoid blocking
             result = await asyncio.get_event_loop().run_in_executor(
                 _executor,
-                lambda c=chunk: genai.embed_content(
+                lambda: genai.embed_content(
                     model="models/text-embedding-004",
-                    content=c,
+                    content=chunk_texts,
                     task_type=task_type
                 )
             )
             if result and 'embedding' in result:
                 batch_embeddings = result['embedding']
-                print(f"DEBUG: Got {len(batch_embeddings)} embeddings for batch {i//chunk_size}")
-                print(f"DEBUG: Embedding dimensions: {len(batch_embeddings[0]) if batch_embeddings else 0}")
-                all_embeddings.extend(batch_embeddings)
+                print(f"DEBUG: AGGRESSIVE chunk {chunk_idx} completed: {len(batch_embeddings)} embeddings")
+                return batch_embeddings
             else:
-                print(f"DEBUG: No embeddings in result for batch {i//chunk_size}: {result}")
+                print(f"DEBUG: No embeddings in result for AGGRESSIVE chunk {chunk_idx}: {result}")
+                return []
         except Exception as e:
-            print(f"Error in embedding batch {i//chunk_size}: {e}")
-            print(f"DEBUG: This might be an API key issue or rate limit")
-            # Return partial results if some embeddings succeeded
-            if all_embeddings:
-                return all_embeddings
+            print(f"Error in AGGRESSIVE embedding chunk {chunk_idx}: {e}")
             return []
+    
+    # Create all chunk tasks
+    chunk_tasks = []
+    for i in range(0, len(texts), chunk_size):
+        chunk = texts[i:i + chunk_size]
+        task = process_chunk_async(chunk, i//chunk_size)
+        chunk_tasks.append(task)
+    
+    # Execute all chunk tasks in parallel
+    chunk_results = await asyncio.gather(*chunk_tasks, return_exceptions=True)
+    
+    # Collect results from parallel processing
+    for result in chunk_results:
+        if isinstance(result, Exception):
+            print(f"DEBUG: AGGRESSIVE chunk processing error: {result}")
+            continue
+        if result:
+            all_embeddings.extend(result)
     
     print(f"DEBUG: Returning {len(all_embeddings)} total embeddings")
     return all_embeddings

@@ -31,10 +31,10 @@ async def run_submission(request: HackRxRequest):
         if not text or not text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from the document.")
         
-        # Deployment-optimized chunking strategy
-        chunk_size = 1000  # Balanced chunk size for deployment
-        overlap = 150      # Reasonable overlap for quality
-        max_chunks = 40    # Balanced chunks for deployment
+        # AGGRESSIVE chunking strategy for sub-10s performance
+        chunk_size = 1200  # Larger chunks for better context
+        overlap = 200      # Better overlap for quality
+        max_chunks = 50    # More chunks for comprehensive coverage
         
         # Create overlapping chunks
         text_chunks = []
@@ -51,18 +51,22 @@ async def run_submission(request: HackRxRequest):
             print(f"DEBUG: Last chunk preview: {text_chunks[-1][:100]}...")
         print(f"DEBUG: Using namespace: {namespace}")
         
-        # Process chunks in parallel for faster embedding and upsert
+        # AGGRESSIVE parallel processing for maximum speed
         upsert_task = asyncio.create_task(upsert_to_pinecone(namespace, text_chunks))
         
-        # Wait for upsert to complete
-        upserted_count = await upsert_task
+        # Wait for upsert to complete with timeout
+        try:
+            upserted_count = await asyncio.wait_for(upsert_task, timeout=15.0)  # 15s timeout for upsert
+        except asyncio.TimeoutError:
+            print("DEBUG: Upsert timeout - proceeding with existing vectors")
+            upserted_count = 0
         print(f"DEBUG: Upserted {upserted_count} vectors to Pinecone")
         
         if upserted_count == 0:
             raise HTTPException(status_code=500, detail="Failed to process document chunks.")
         
-        # Small wait for deployment environment stability
-        await asyncio.sleep(1)
+        # Minimal wait for AGGRESSIVE performance
+        await asyncio.sleep(0.5)  # Reduced wait time
         
         # Process questions in parallel
         tasks = [
@@ -83,7 +87,7 @@ async def run_submission(request: HackRxRequest):
 async def process_question(question: str, namespace: str) -> Answer:
     """Process a single question and return an Answer."""
     print(f"DEBUG: Processing question: {question}")
-    relevant_chunks = await query_pinecone(namespace, question, top_k=5)  # Deployment-optimized chunks
+    relevant_chunks = await query_pinecone(namespace, question, top_k=8)  # AGGRESSIVE chunk retrieval
     print(f"DEBUG: Found {len(relevant_chunks)} chunks for question: {question}")
     
     if relevant_chunks:

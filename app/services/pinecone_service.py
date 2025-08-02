@@ -21,9 +21,10 @@ _embedding_cache = {}
 # AWS region that supports free tier
 AWS_REGION = "us-east-1"  # us-east-1 supports free tier
 
-# Configure for DEPLOYMENT environment (Render optimized)
-BATCH_SIZE = 25   # Optimized for Render's memory limits
-MAX_WORKERS = 4   # Optimized for Render's CPU limits
+# Configure for AGGRESSIVE DEPLOYMENT optimization (sub-10 seconds target)
+BATCH_SIZE = 50   # Increased for faster processing
+MAX_WORKERS = 8   # Increased for parallel processing
+CONCURRENT_BATCHES = 3  # Process multiple batches simultaneously
 
 async def create_pinecone_index():
     """Creates an optimized Pinecone index if it doesn't exist.
@@ -99,8 +100,8 @@ async def process_batch(batch: List[tuple[int, str]]) -> List[dict]:
     ]
 
 async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
-    """Upserts text chunks in parallel for better performance."""
-    print(f"DEBUG: Starting upsert for {len(text_chunks)} chunks to namespace '{namespace}'")
+    """Upserts text chunks with AGGRESSIVE parallel processing for sub-10s performance."""
+    print(f"DEBUG: Starting AGGRESSIVE upsert for {len(text_chunks)} chunks to namespace '{namespace}'")
     await create_pinecone_index()
     loop = asyncio.get_event_loop()
     
@@ -118,50 +119,86 @@ async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
     
     print(f"DEBUG: Processing {len(valid_chunks)} valid chunks")
     
-    # Process in parallel batches
-    total_vectors = 0
-    for i in range(0, len(valid_chunks), BATCH_SIZE):
-        batch = valid_chunks[i:i + BATCH_SIZE]
-        print(f"DEBUG: Processing batch {i//BATCH_SIZE + 1} with {len(batch)} chunks")
+    # Create batches for AGGRESSIVE parallel processing
+    batches = []
+    for i in range(0, len(text_chunks), BATCH_SIZE):
+        batch_chunks = text_chunks[i:i + BATCH_SIZE]
+        batch = [(i + j, chunk) for j, chunk in enumerate(batch_chunks)]
+        batches.append(batch)
+    
+    print(f"DEBUG: Created {len(batches)} batches for AGGRESSIVE processing")
+    
+    # Process batches with AGGRESSIVE concurrency
+    semaphore = asyncio.Semaphore(MAX_WORKERS * 2)  # Double the concurrency
+    
+    async def process_with_semaphore(batch):
+        async with semaphore:
+            return await process_batch(batch)
+    
+    # Process multiple batch groups simultaneously for maximum speed
+    batch_groups = [batches[i:i + CONCURRENT_BATCHES] for i in range(0, len(batches), CONCURRENT_BATCHES)]
+    
+    all_vectors = []
+    for group in batch_groups:
+        # Process each group of batches in parallel
+        group_results = await asyncio.gather(
+            *[process_with_semaphore(batch) for batch in group],
+            return_exceptions=True
+        )
         
-        vectors = await process_batch(batch)
-        
-        if vectors:
-            print(f"DEBUG: Generated {len(vectors)} vectors for batch")
-            # Upsert all vectors at once for maximum speed
+        # Collect successful results immediately
+        for result in group_results:
+            if isinstance(result, Exception):
+                print(f"DEBUG: Batch processing error: {result}")
+                continue
+            if result:
+                all_vectors.extend(result)
+    
+    if not all_vectors:
+        print(f"DEBUG: No vectors generated from {len(text_chunks)} chunks")
+        return 0
+    
+    print(f"DEBUG: Generated {len(all_vectors)} vectors for AGGRESSIVE upsert")
+    
+    # AGGRESSIVE parallel upsert to Pinecone
+    upsert_tasks = []
+    upsert_semaphore = asyncio.Semaphore(MAX_WORKERS)  # Control upsert concurrency
+    
+    async def upsert_batch_async(batch_vectors, batch_num):
+        async with upsert_semaphore:
             try:
-                # Run upsert in thread pool with minimal timeout
                 await loop.run_in_executor(
                     None,
-                    lambda v=vectors: index.upsert(
-                        vectors=v,
+                    lambda: index.upsert(
+                        vectors=batch_vectors,
                         namespace=namespace,
-                        timeout=8  # Longer timeout for deployment latency
+                        timeout=12  # Slightly longer timeout for reliability
                     )
                 )
-                print(f"DEBUG: Successfully upserted {len(vectors)} vectors in single batch")
+                print(f"DEBUG: AGGRESSIVE upsert batch {batch_num} completed: {len(batch_vectors)} vectors")
+                return len(batch_vectors)
             except Exception as e:
-                print(f"DEBUG: Error upserting batch: {e}")
-                # Fallback to smaller batches if needed
-                for j in range(0, len(vectors), 100):
-                    batch_vectors = vectors[j:j+100]
-                    try:
-                        await loop.run_in_executor(
-                            None,
-                            lambda v=batch_vectors: index.upsert(
-                                vectors=v,
-                                namespace=namespace,
-                                timeout=5
-                            )
-                        )
-                    except:
-                        continue
-            total_vectors += len(vectors)
-        else:
-            print(f"DEBUG: No vectors generated for batch {i//BATCH_SIZE + 1}")
+                print(f"DEBUG: AGGRESSIVE upsert error for batch {batch_num}: {e}")
+                return 0
     
-    print(f"DEBUG: Total vectors upserted: {total_vectors}")
-    return total_vectors
+    # Create all upsert tasks
+    for i in range(0, len(all_vectors), BATCH_SIZE):
+        batch_vectors = all_vectors[i:i + BATCH_SIZE]
+        task = upsert_batch_async(batch_vectors, i//BATCH_SIZE + 1)
+        upsert_tasks.append(task)
+    
+    # Execute all upsert tasks in parallel
+    upsert_results = await asyncio.gather(*upsert_tasks, return_exceptions=True)
+    
+    # Calculate total upserted count
+    upsert_count = sum(result for result in upsert_results if isinstance(result, int))
+    failed_upserts = sum(1 for result in upsert_results if isinstance(result, Exception))
+    
+    if failed_upserts > 0:
+        print(f"DEBUG: {failed_upserts} upsert batches failed, {len(upsert_tasks) - failed_upserts} succeeded")
+    
+    print(f"DEBUG: Total vectors upserted: {upsert_count}")
+    return upsert_count
 
 async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str]:
     """Optimized query with faster response time."""
@@ -218,7 +255,7 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
                 top_k=min(top_k, 8),  # Deployment-optimized results
                 include_metadata=True,
                 namespace=namespace,
-                timeout=8  # Deployment-optimized timeout
+                timeout=6  # AGGRESSIVE timeout for speed
             )
         )
         
@@ -231,9 +268,9 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
             print(f"DEBUG: 4. Vectors still being indexed (try waiting longer)")
             return []
         
-        # Deployment-optimized matching threshold
-        good_matches = [match for match in results.matches if match.score > 0.25]
-        print(f"DEBUG: Found {len(good_matches)} matches with score > 0.25 (deployment-optimized)")
+        # AGGRESSIVE matching threshold for speed
+        good_matches = [match for match in results.matches if match.score > 0.2]
+        print(f"DEBUG: Found {len(good_matches)} matches with score > 0.2 (AGGRESSIVE-optimized)")
         
         for i, match in enumerate(results.matches[:5]):
             text_preview = match.metadata.get('text', '')[:100] if match.metadata else 'No metadata'

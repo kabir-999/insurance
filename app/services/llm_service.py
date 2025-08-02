@@ -31,15 +31,15 @@ async def get_answer_from_llm(question: str, context: str) -> str:
     """
 
     try:
-        # Using deployment-optimized model config
+        # Using AGGRESSIVE model config for sub-10s performance
         model = genai.GenerativeModel(
             'gemini-1.5-flash',
             generation_config=genai.types.GenerationConfig(
-                temperature=0.1,  # Balanced temperature for deployment
-                max_output_tokens=400,  # Reasonable output length
-                top_p=0.8,  # Balanced sampling for quality
-                top_k=40,  # Reasonable choices for deployment
-                candidate_count=1,  # Single candidate for speed
+                temperature=0.05,  # Lower temperature for speed
+                max_output_tokens=300,  # Reduced for speed while maintaining quality
+                top_p=0.9,  # Higher for better quality
+                top_k=50,  # More choices for quality
+                candidate_count=1,  # Single candidate for maximum speed
             )
         )
         loop = asyncio.get_event_loop()
