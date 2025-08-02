@@ -31,10 +31,10 @@ async def run_submission(request: HackRxRequest):
         if not text or not text.strip():
             raise HTTPException(status_code=400, detail="Could not extract text from the document.")
         
-        # Improved chunking strategy for better context retrieval
-        chunk_size = 1000  # Optimal chunk size for context
-        overlap = 150      # Overlap between chunks for continuity
-        max_chunks = 50    # More chunks for better coverage
+        # Deployment-optimized chunking strategy
+        chunk_size = 1000  # Balanced chunk size for deployment
+        overlap = 150      # Reasonable overlap for quality
+        max_chunks = 40    # Balanced chunks for deployment
         
         # Create overlapping chunks
         text_chunks = []
@@ -61,7 +61,10 @@ async def run_submission(request: HackRxRequest):
         if upserted_count == 0:
             raise HTTPException(status_code=500, detail="Failed to process document chunks.")
         
-        # Process questions in parallel immediately (no wait)
+        # Small wait for deployment environment stability
+        await asyncio.sleep(1)
+        
+        # Process questions in parallel
         tasks = [
             process_question(q, namespace)
             for q in request.questions
@@ -80,7 +83,7 @@ async def run_submission(request: HackRxRequest):
 async def process_question(question: str, namespace: str) -> Answer:
     """Process a single question and return an Answer."""
     print(f"DEBUG: Processing question: {question}")
-    relevant_chunks = await query_pinecone(namespace, question, top_k=5)  # Optimal chunks for speed
+    relevant_chunks = await query_pinecone(namespace, question, top_k=5)  # Deployment-optimized chunks
     print(f"DEBUG: Found {len(relevant_chunks)} chunks for question: {question}")
     
     if relevant_chunks:

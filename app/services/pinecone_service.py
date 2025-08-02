@@ -15,13 +15,15 @@ INDEX_NAME = PINECONE_INDEX_NAME
 
 # Cache the index instance for reuse
 _index_cache = None
+# Cache for query embeddings to avoid recomputation
+_embedding_cache = {}
 
 # AWS region that supports free tier
 AWS_REGION = "us-east-1"  # us-east-1 supports free tier
 
-# Configure for maximum speed
-BATCH_SIZE = 50  # Maximum batch size for speed
-MAX_WORKERS = 8  # Maximum workers for parallel processing
+# Configure for DEPLOYMENT environment (Render optimized)
+BATCH_SIZE = 25   # Optimized for Render's memory limits
+MAX_WORKERS = 4   # Optimized for Render's CPU limits
 
 async def create_pinecone_index():
     """Creates an optimized Pinecone index if it doesn't exist.
@@ -134,7 +136,7 @@ async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
                     lambda v=vectors: index.upsert(
                         vectors=v,
                         namespace=namespace,
-                        timeout=3  # Very short timeout for maximum speed
+                        timeout=8  # Longer timeout for deployment latency
                     )
                 )
                 print(f"DEBUG: Successfully upserted {len(vectors)} vectors in single batch")
@@ -149,7 +151,7 @@ async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
                             lambda v=batch_vectors: index.upsert(
                                 vectors=v,
                                 namespace=namespace,
-                                timeout=2
+                                timeout=5
                             )
                         )
                     except:
@@ -191,12 +193,19 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
         except Exception as e:
             print(f"DEBUG: Could not get namespace stats: {e}")
         
-        # Get embedding with timeout
+        # Get embedding with caching for extreme speed
         print(f"DEBUG: Getting embedding for query...")
-        query_embedding = await get_embeddings_batch([query], task_type="RETRIEVAL_QUERY")
-        if not query_embedding:
-            print(f"DEBUG: Failed to get query embedding")
-            return []
+        cache_key = f"query_{hash(query)}"
+        if cache_key in _embedding_cache:
+            query_embedding = [_embedding_cache[cache_key]]
+            print(f"DEBUG: Using cached embedding for query")
+        else:
+            query_embedding = await get_embeddings_batch([query], task_type="RETRIEVAL_QUERY")
+            if not query_embedding:
+                print(f"DEBUG: Failed to get query embedding")
+                return []
+            _embedding_cache[cache_key] = query_embedding[0]
+            print(f"DEBUG: Cached new embedding for query")
         
         print(f"DEBUG: Got query embedding with dimension: {len(query_embedding[0])}")
             
@@ -206,10 +215,10 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
             None,
             lambda: index.query(
                 vector=query_embedding[0],
-                top_k=min(top_k, 8),  # Balanced results for speed
+                top_k=min(top_k, 8),  # Deployment-optimized results
                 include_metadata=True,
                 namespace=namespace,
-                timeout=3  # Minimal timeout for maximum speed
+                timeout=8  # Deployment-optimized timeout
             )
         )
         
@@ -222,9 +231,9 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
             print(f"DEBUG: 4. Vectors still being indexed (try waiting longer)")
             return []
         
-        # Filter matches with lower threshold for speed (more permissive)
-        good_matches = [match for match in results.matches if match.score > 0.2]
-        print(f"DEBUG: Found {len(good_matches)} matches with score > 0.2")
+        # Deployment-optimized matching threshold
+        good_matches = [match for match in results.matches if match.score > 0.25]
+        print(f"DEBUG: Found {len(good_matches)} matches with score > 0.25 (deployment-optimized)")
         
         for i, match in enumerate(results.matches[:5]):
             text_preview = match.metadata.get('text', '')[:100] if match.metadata else 'No metadata'
