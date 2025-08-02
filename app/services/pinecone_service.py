@@ -8,17 +8,20 @@ import asyncio
 from typing import List, Optional
 import concurrent.futures
 
-# Initialize Pinecone
+# Initialize Pinecone with connection pooling
 pc = Pinecone(api_key=PINECONE_API_KEY)
 # Use index name from environment variables
 INDEX_NAME = PINECONE_INDEX_NAME
 
+# Cache the index instance for reuse
+_index_cache = None
+
 # AWS region that supports free tier
 AWS_REGION = "us-east-1"  # us-east-1 supports free tier
 
-# Configure for better context processing
-BATCH_SIZE = 15  # Balanced batch size for good processing
-MAX_WORKERS = 3  # Moderate workers for efficiency
+# Configure for faster processing
+BATCH_SIZE = 25  # Larger batch size for speed
+MAX_WORKERS = 5  # More workers for parallel processing
 
 async def create_pinecone_index():
     """Creates an optimized Pinecone index if it doesn't exist.
@@ -99,8 +102,11 @@ async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
     await create_pinecone_index()
     loop = asyncio.get_event_loop()
     
-    # Create index instance in the event loop
-    index = await loop.run_in_executor(None, lambda: pc.Index(INDEX_NAME))
+    # Use cached index instance for speed
+    global _index_cache
+    if _index_cache is None:
+        _index_cache = await loop.run_in_executor(None, lambda: pc.Index(INDEX_NAME))
+    index = _index_cache
     
     # Filter and prepare chunks with indices
     valid_chunks = [(i, chunk) for i, chunk in enumerate(text_chunks) if chunk and chunk.strip()]
@@ -120,17 +126,17 @@ async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
         
         if vectors:
             print(f"DEBUG: Generated {len(vectors)} vectors for batch")
-            # Upsert in smaller batches for reliability
-            for j in range(0, len(vectors), 10):
-                batch_vectors = vectors[j:j+10]
+            # Upsert in larger batches for speed
+            for j in range(0, len(vectors), 50):
+                batch_vectors = vectors[j:j+50]
                 try:
-                    # Run upsert in thread pool with reasonable timeout
+                    # Run upsert in thread pool with shorter timeout for speed
                     await loop.run_in_executor(
                         None,
                         lambda v=batch_vectors: index.upsert(
                             vectors=v,
                             namespace=namespace,
-                            timeout=10  # Reasonable timeout for reliability
+                            timeout=5  # Shorter timeout for speed
                         )
                     )
                     print(f"DEBUG: Successfully upserted {len(batch_vectors)} vectors")
@@ -151,8 +157,11 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
     await create_pinecone_index()
     loop = asyncio.get_event_loop()
     
-    # Create index instance in the event loop
-    index = await loop.run_in_executor(None, lambda: pc.Index(INDEX_NAME))
+    # Use cached index instance for speed
+    global _index_cache
+    if _index_cache is None:
+        _index_cache = await loop.run_in_executor(None, lambda: pc.Index(INDEX_NAME))
+    index = _index_cache
     
     try:
         # Check if namespace has any vectors
@@ -190,7 +199,7 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
                 top_k=min(top_k, 10),  # More results for better context
                 include_metadata=True,
                 namespace=namespace,
-                timeout=15  # Longer timeout for better results
+                timeout=5  # Shorter timeout for speed
             )
         )
         

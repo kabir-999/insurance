@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # Thread pool for parallel processing
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=8)  # More workers for speed
 
 async def get_embeddings_batch(texts: List[str], task_type: str = "RETRIEVAL_DOCUMENT") -> List[List[float]]:
     """Generates embeddings for a batch of texts using Google's model with parallel processing."""
@@ -17,8 +17,8 @@ async def get_embeddings_batch(texts: List[str], task_type: str = "RETRIEVAL_DOC
         print("DEBUG: No texts provided for embedding")
         return []
 
-    # Process in chunks to avoid rate limits
-    chunk_size = 50
+    # Process in larger chunks for speed
+    chunk_size = 100  # Larger chunks for faster processing
     all_embeddings = []
     
     for i in range(0, len(texts), chunk_size):

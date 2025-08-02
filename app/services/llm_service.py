@@ -31,8 +31,15 @@ async def get_answer_from_llm(question: str, context: str) -> str:
     """
 
     try:
-        # Using a model that is good for question answering
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Using the fastest model for quick responses
+        model = genai.GenerativeModel(
+            'gemini-1.5-flash',
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.1,  # Lower temperature for faster, more focused responses
+                max_output_tokens=500,  # Limit output for speed
+                top_p=0.8,  # Focused sampling for speed
+            )
+        )
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(None, model.generate_content, prompt)
         return response.text
