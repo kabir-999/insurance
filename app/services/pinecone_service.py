@@ -19,9 +19,9 @@ _index_cache = None
 # AWS region that supports free tier
 AWS_REGION = "us-east-1"  # us-east-1 supports free tier
 
-# Configure for faster processing
-BATCH_SIZE = 25  # Larger batch size for speed
-MAX_WORKERS = 5  # More workers for parallel processing
+# Configure for maximum speed
+BATCH_SIZE = 50  # Maximum batch size for speed
+MAX_WORKERS = 8  # Maximum workers for parallel processing
 
 async def create_pinecone_index():
     """Creates an optimized Pinecone index if it doesn't exist.
@@ -126,24 +126,34 @@ async def upsert_to_pinecone(namespace: str, text_chunks: List[str]) -> int:
         
         if vectors:
             print(f"DEBUG: Generated {len(vectors)} vectors for batch")
-            # Upsert in larger batches for speed
-            for j in range(0, len(vectors), 50):
-                batch_vectors = vectors[j:j+50]
-                try:
-                    # Run upsert in thread pool with shorter timeout for speed
-                    await loop.run_in_executor(
-                        None,
-                        lambda v=batch_vectors: index.upsert(
-                            vectors=v,
-                            namespace=namespace,
-                            timeout=5  # Shorter timeout for speed
-                        )
+            # Upsert all vectors at once for maximum speed
+            try:
+                # Run upsert in thread pool with minimal timeout
+                await loop.run_in_executor(
+                    None,
+                    lambda v=vectors: index.upsert(
+                        vectors=v,
+                        namespace=namespace,
+                        timeout=3  # Very short timeout for maximum speed
                     )
-                    print(f"DEBUG: Successfully upserted {len(batch_vectors)} vectors")
-                except Exception as e:
-                    print(f"DEBUG: Error upserting batch: {e}")
-                    # Continue with other batches even if one fails
-                    continue
+                )
+                print(f"DEBUG: Successfully upserted {len(vectors)} vectors in single batch")
+            except Exception as e:
+                print(f"DEBUG: Error upserting batch: {e}")
+                # Fallback to smaller batches if needed
+                for j in range(0, len(vectors), 100):
+                    batch_vectors = vectors[j:j+100]
+                    try:
+                        await loop.run_in_executor(
+                            None,
+                            lambda v=batch_vectors: index.upsert(
+                                vectors=v,
+                                namespace=namespace,
+                                timeout=2
+                            )
+                        )
+                    except:
+                        continue
             total_vectors += len(vectors)
         else:
             print(f"DEBUG: No vectors generated for batch {i//BATCH_SIZE + 1}")
@@ -196,10 +206,10 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
             None,
             lambda: index.query(
                 vector=query_embedding[0],
-                top_k=min(top_k, 10),  # More results for better context
+                top_k=min(top_k, 8),  # Balanced results for speed
                 include_metadata=True,
                 namespace=namespace,
-                timeout=5  # Shorter timeout for speed
+                timeout=3  # Minimal timeout for maximum speed
             )
         )
         
@@ -212,9 +222,9 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
             print(f"DEBUG: 4. Vectors still being indexed (try waiting longer)")
             return []
         
-        # Filter matches with reasonable similarity scores
-        good_matches = [match for match in results.matches if match.score > 0.3]
-        print(f"DEBUG: Found {len(good_matches)} matches with score > 0.3")
+        # Filter matches with lower threshold for speed (more permissive)
+        good_matches = [match for match in results.matches if match.score > 0.2]
+        print(f"DEBUG: Found {len(good_matches)} matches with score > 0.2")
         
         for i, match in enumerate(results.matches[:5]):
             text_preview = match.metadata.get('text', '')[:100] if match.metadata else 'No metadata'

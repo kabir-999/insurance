@@ -52,16 +52,16 @@ async def run_submission(request: HackRxRequest):
         print(f"DEBUG: Using namespace: {namespace}")
         
         # Process chunks in parallel for faster embedding and upsert
-        upserted_count = await upsert_to_pinecone(namespace, text_chunks)
+        upsert_task = asyncio.create_task(upsert_to_pinecone(namespace, text_chunks))
+        
+        # Wait for upsert to complete
+        upserted_count = await upsert_task
         print(f"DEBUG: Upserted {upserted_count} vectors to Pinecone")
         
         if upserted_count == 0:
             raise HTTPException(status_code=500, detail="Failed to process document chunks.")
         
-        # Minimal wait for Pinecone indexing (optimized for speed)
-        await asyncio.sleep(0.5)
-        
-        # Process questions in parallel
+        # Process questions in parallel immediately (no wait)
         tasks = [
             process_question(q, namespace)
             for q in request.questions
@@ -80,7 +80,7 @@ async def run_submission(request: HackRxRequest):
 async def process_question(question: str, namespace: str) -> Answer:
     """Process a single question and return an Answer."""
     print(f"DEBUG: Processing question: {question}")
-    relevant_chunks = await query_pinecone(namespace, question, top_k=6)  # Slightly fewer chunks for speed
+    relevant_chunks = await query_pinecone(namespace, question, top_k=5)  # Optimal chunks for speed
     print(f"DEBUG: Found {len(relevant_chunks)} chunks for question: {question}")
     
     if relevant_chunks:
