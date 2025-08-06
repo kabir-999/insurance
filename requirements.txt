@@ -3,6 +3,7 @@ uvicorn[standard]
 gunicorn
 pinecone
 google-generativeai
+groq
 python-dotenv
 PyPDF2
 python-docx

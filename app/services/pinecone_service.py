@@ -27,17 +27,13 @@ MAX_WORKERS = 8   # Increased for parallel processing
 CONCURRENT_BATCHES = 3  # Process multiple batches simultaneously
 
 async def create_pinecone_index():
-    """Creates an optimized Pinecone index if it doesn't exist.
-    
-    Using AWS us-east-1 which supports the free tier.
-    """
+    """Creates or recreates a Pinecone index with 384 dimensions if needed, and waits until ready."""
+    import time
     try:
-        # List indexes is a synchronous operation, so we run it in a thread
         indexes = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: pc.list_indexes().names()
         )
-        
         if INDEX_NAME in indexes:
             # Check if existing index has correct dimensions
             try:
@@ -45,38 +41,51 @@ async def create_pinecone_index():
                     None,
                     lambda: pc.describe_index(INDEX_NAME)
                 )
-                if index_info.dimension != 768:
-                    print(f"Index {INDEX_NAME} has wrong dimensions ({index_info.dimension}), deleting and recreating...")
+                if index_info['dimension'] != 384:
+                    print(f"Index {INDEX_NAME} has wrong dimension {index_info['dimension']} (expected 384). Deleting and recreating...")
                     await asyncio.get_event_loop().run_in_executor(
                         None,
                         lambda: pc.delete_index(INDEX_NAME)
                     )
-                    # Wait a bit for deletion to complete
-                    await asyncio.sleep(10)
-                    indexes = []  # Force recreation
+                    # Wait for deletion to propagate
+                    time.sleep(3)
+                    # Continue to creation below
                 else:
                     print(f"Index {INDEX_NAME} already exists with correct dimensions")
                     return True
             except Exception as e:
-                print(f"Error checking index dimensions: {e}")
-                # Continue to recreation if there's an issue
-        
-        if INDEX_NAME not in indexes:
-            print(f"Creating new index: {INDEX_NAME} in {AWS_REGION}")
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: pc.create_index(
-                    name=INDEX_NAME,
-                    dimension=768,  # Dimension for text-embedding-004 model
-                    metric="cosine",
-                    spec=ServerlessSpec(
-                        cloud="aws",
-                        region=AWS_REGION
-                    ),
-                    timeout=30
-                )
+                print(f"Error describing index: {e}")
+                # Proceed to create index if describe fails
+        # Create index with 384 dimensions
+        await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: pc.create_index(
+                name=INDEX_NAME,
+                dimension=384,  # Force correct dimension
+                metric="cosine",
+                spec=ServerlessSpec(
+                    cloud="aws",
+                    region=AWS_REGION
+                ),
+                timeout=30
             )
-            print(f"Successfully created index: {INDEX_NAME}")
+        )
+        print(f"Successfully created index: {INDEX_NAME}. Waiting for it to become ready...")
+        # Wait until index is ready (poll every 2s, up to 60s)
+        max_wait = 60
+        waited = 0
+        while waited < max_wait:
+            try:
+                info = pc.describe_index(INDEX_NAME)
+                if info and info['status']['ready']:
+                    print(f"Index {INDEX_NAME} is ready!")
+                    break
+            except Exception as e:
+                print(f"Waiting for index to become ready: {e}")
+            time.sleep(2)
+            waited += 2
+        else:
+            print(f"WARNING: Index {INDEX_NAME} did not become ready after {max_wait} seconds. Upserts may fail.")
         return True
     except Exception as e:
         print(f"Error in create_pinecone_index: {e}")
@@ -237,7 +246,7 @@ async def query_pinecone(namespace: str, query: str, top_k: int = 5) -> List[str
             query_embedding = [_embedding_cache[cache_key]]
             print(f"DEBUG: Using cached embedding for query")
         else:
-            query_embedding = await get_embeddings_batch([query], task_type="RETRIEVAL_QUERY")
+            query_embedding = await get_embeddings_batch([query])
             if not query_embedding:
                 print(f"DEBUG: Failed to get query embedding")
                 return []
